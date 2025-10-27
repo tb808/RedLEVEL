@@ -103,6 +103,7 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+// test
 
 // --- Button lesen mit Entprellung ---
 uint8_t readButton(GPIO_TypeDef* port, uint16_t pin)
