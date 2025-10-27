@@ -24,6 +24,12 @@
 #include "ST7735.h"
 #include "GFX_FUNCTIONS.h"
 #include <stdio.h>
+#include <math.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,6 +41,24 @@ typedef struct {
     float pitch;
 } TiltAngles;
 
+
+typedef enum {
+    STATE_MENU,
+    STATE_DISPLAY,
+    STATE_LIMIT,
+    STATE_CALIB
+} SystemState;
+
+typedef struct {
+    GPIO_TypeDef* port;
+    uint16_t pin;
+    uint8_t pressed_last;
+} Button_t;
+
+SystemState currentState = STATE_MENU;
+int menu_index = 0;
+const char* menu_items[3] = {"Anzeige", "Grenzwert", "Kalibrierung"}; // 3 Menüpunkte
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -45,6 +69,11 @@ typedef struct {
 
 #define ACCEL_XOUT_H 0x3B
 #define PWR_MGMT_1   0x6B
+
+#define BTN_UP_PIN    GPIO_PIN_0
+#define BTN_DOWN_PIN  GPIO_PIN_1
+#define BTN_ENTER_PIN GPIO_PIN_4
+#define BTN_GPIO      GPIOA
 
 /* USER CODE END PD */
 
@@ -74,12 +103,51 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-//test change 2
+
+// --- Button lesen mit Entprellung ---
+uint8_t readButton(GPIO_TypeDef* port, uint16_t pin)
+{
+    static uint32_t last_press_time[16] = {0};
+    static uint8_t initialized = 0;
+    if(!initialized)
+    {
+        for(int i=0;i<16;i++) last_press_time[i] = HAL_GetTick();
+        initialized = 1;
+    }
+
+    uint8_t pin_num = 0;
+    uint16_t temp_pin = pin;
+    while(temp_pin > 1) { temp_pin >>= 1; pin_num++; }
+
+    if(HAL_GPIO_ReadPin(port, pin) == GPIO_PIN_RESET) // gedrückt = LOW
+    {
+        if(HAL_GetTick() - last_press_time[pin_num] > 250)
+        {
+            last_press_time[pin_num] = HAL_GetTick();
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// --- Flankenerkennung Taster ---
+uint8_t button_pressed(Button_t* btn)
+{
+    uint8_t state = (HAL_GPIO_ReadPin(btn->port, btn->pin) == GPIO_PIN_RESET); // gedrückt = LOW
+    uint8_t result = 0;
+
+    if(state && !btn->pressed_last)
+        result = 1; // steigende Flanke erkannt
+    btn->pressed_last = state;
+    return result;
+}
+
+/* MPU Funktionen */
+
 
 void MPU6500_Init(void)
 {
     uint8_t data = 0x00;
-    // Sensor aus dem Sleep-Modus holen
     HAL_I2C_Mem_Write(&hi2c1, MPU6500_ADDR, PWR_MGMT_1, 1, &data, 1, HAL_MAX_DELAY);
 }
 
@@ -87,21 +155,64 @@ void MPU6500_Read_Accel(int16_t *ax, int16_t *ay, int16_t *az)
 {
     uint8_t rawData[6];
     HAL_I2C_Mem_Read(&hi2c1, MPU6500_ADDR, ACCEL_XOUT_H, 1, rawData, 6, HAL_MAX_DELAY);
-
     *ax = (int16_t)(rawData[0] << 8 | rawData[1]);
     *ay = (int16_t)(rawData[2] << 8 | rawData[3]);
     *az = (int16_t)(rawData[4] << 8 | rawData[5]);
 }
 
-// Berechnet nur Roll
 float CalculateRoll(int16_t ax, int16_t ay, int16_t az)
 {
     float ax_f = ax / 16384.0f;
     float ay_f = ay / 16384.0f;
     float az_f = az / 16384.0f;
-
     return atan2f(ay_f, sqrtf(ax_f*ax_f + az_f*az_f)) * 180.0f / M_PI;
 }
+
+// --- Menü anzeigen ---
+void displayMenu(int selectedIndex)
+{
+    fillRect(0,20,128,100,BLACK);
+    for(int i=0;i<2;i++)
+    {
+        if(i==selectedIndex)
+            ST7735_WriteString(10,30+i*20,menu_items[i],Font_7x10,WHITE,YELLOW);
+        else
+            ST7735_WriteString(10,30+i*20,menu_items[i],Font_7x10,YELLOW,BLACK);
+    }
+}
+
+void UpdateDisplay(SystemState state, int menu_index, int limit_value, int calibration_offset)
+{
+    char text[32];
+    switch(state)
+    {
+        case STATE_MENU:
+            displayMenu(menu_index);
+            break;
+
+        case STATE_DISPLAY:
+            fillRect(0,20,128,100,BLACK);
+            ST7735_WriteString(0,20,"Anzeige-Modus",Font_7x10,YELLOW,BLACK);
+            break;
+
+        case STATE_LIMIT:
+            fillRect(0,20,128,100,BLACK);
+            ST7735_WriteString(0,20,"Grenzwert-Modus",Font_7x10,YELLOW,BLACK);
+            snprintf(text,sizeof(text),"Grenzwert: %d Grad",limit_value);
+            ST7735_WriteString(0,40,text,Font_7x10,WHITE,BLACK);
+            break;
+
+        case STATE_CALIB:
+            fillRect(0,20,128,100,BLACK);
+            ST7735_WriteString(0,20,"Kalibrierungs-Modus",Font_7x10,YELLOW,BLACK);
+            snprintf(text,sizeof(text),"Offset: %d Grad",calibration_offset);
+            ST7735_WriteString(0,40,text,Font_7x10,WHITE,BLACK);
+            break;
+    }
+}
+
+
+
 
 
 /* USER CODE END 0 */
@@ -139,34 +250,21 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
+  // GPIO für Taster, interne Pull-ups aktiviert (Taster gegen GND)
+     __HAL_RCC_GPIOA_CLK_ENABLE();
+     GPIO_InitTypeDef GPIO_InitStruct = {0};
+     GPIO_InitStruct.Pin = BTN_UP_PIN | BTN_DOWN_PIN | BTN_ENTER_PIN;
+     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+     GPIO_InitStruct.Pull = GPIO_PULLUP;
+     HAL_GPIO_Init(BTN_GPIO, &GPIO_InitStruct);
+
   ST7735_Init(0);
-  fillScreen(BLACK);
+      fillScreen(BLACK);
 
-  // Titel
-     ST7735_WriteString(10, 0, "REDLEVEL", Font_11x18, YELLOW, BLACK);
+      int limit_value = 30;           // Beispiel-Grenzwert
+      int calibration_offset = 0;      // Kalibrierungs-Offset
 
-     // Textbereich vorbereiten
-     char text[32];
-     fillRect(0, 140, 128, 20, BLACK);
-     ST7735_WriteString(0, 142, "Neigung: ---", Font_7x10, YELLOW, BLACK);
-
-     MPU6500_Init();
-     HAL_Delay(500);
-
-     int16_t ax, ay, az;
-     float roll = 0.0f, roll_old = 999.0f;
-
-     const int x_center = 64;
-     const int y_center = 80;
-     const int line_length = 100;
-
-     int old_x1 = x_center - line_length/2;
-     int old_y1 = y_center;
-     int old_x2 = x_center + line_length/2;
-     int old_y2 = y_center;
-
-     // Horizontlinie initial zeichnen
-     drawLine(old_x1, old_y1, old_x2, old_y2, WHITE);
+      MPU6500_Init();
 
   /* USER CODE END 2 */
 
@@ -175,38 +273,70 @@ int main(void)
   while (1)
   {
 
-	  MPU6500_Read_Accel(&ax, &ay, &az);
-	         roll = CalculateRoll(ax, ay, az);
+	  // --- Button abfragen ---
+	      uint8_t btn_up = readButton(BTN_GPIO, BTN_UP_PIN);
+	      uint8_t btn_down = readButton(BTN_GPIO, BTN_DOWN_PIN);
+	      uint8_t btn_enter = readButton(BTN_GPIO, BTN_ENTER_PIN);
 
-	         int roll_deg = (int)(roll + 0.5f);
+	      switch(currentState)
+	      {
+	          case STATE_MENU:
+	              if(btn_up)
+	              {
+	                  if(menu_index > 0) menu_index--;
+	                  else menu_index = 2; // Wrap-around
+	                  UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
+	              }
+	              if(btn_down)
+	              {
+	                  if(menu_index < 2) menu_index++;
+	                  else menu_index = 0; // Wrap-around
+	                  UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
+	              }
+	              if(btn_enter)
+	              {
+	                  switch(menu_index)
+	                  {
+	                      case 0: currentState = STATE_DISPLAY; break;
+	                      case 1: currentState = STATE_LIMIT; break;
+	                      case 2: currentState = STATE_CALIB; break;
+	                  }
+	                  UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
+	              }
+	              break;
 
-	         if (abs(roll_deg - (int)roll_old) >= 1)
-	         {
-	             // Alten Horizont löschen (übermalen mit Schwarz)
-	             drawLine(old_x1, old_y1, old_x2, old_y2, BLACK);
+	          case STATE_DISPLAY:
+	          {
+	              int16_t ax, ay, az;
+	              MPU6500_Read_Accel(&ax, &ay, &az);
+	              float roll = CalculateRoll(ax, ay, az) + calibration_offset;
 
-	             // Neue Linie berechnen
-	             float angle = roll * (M_PI / 180.0f);
-	             int x1 = x_center - (line_length / 2) * cosf(angle);
-	             int y1 = y_center - (line_length / 2) * sinf(angle);
-	             int x2 = x_center + (line_length / 2) * cosf(angle);
-	             int y2 = y_center + (line_length / 2) * sinf(angle);
+	              char buf[32];
+	              snprintf(buf, sizeof(buf), "Roll: %.2f", roll);
+	              fillRect(0,40,128,20,BLACK);
+	              ST7735_WriteString(0,40,buf,Font_7x10,WHITE,BLACK);
 
-	             // Linie zeichnen
-	             drawLine(x1, y1, x2, y2, WHITE);
+	              if(btn_enter) currentState = STATE_MENU; // zurück ins Menü
+	              UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
+	          }
+	          break;
 
-	             // Text aktualisieren
-	             snprintf(text, sizeof(text), "Neigung: %d Grad", roll_deg);
-	             fillRect(0, 140, 128, 20, BLACK);
-	             ST7735_WriteString(0, 142, text, Font_7x10, YELLOW, BLACK);
+	          case STATE_LIMIT:
+	              if(btn_up) limit_value++;
+	              if(btn_down) limit_value--;
+	              if(btn_enter) currentState = STATE_MENU;
+	              UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
+	              break;
 
-	             // Alte Koordinaten merken
-	             old_x1 = x1; old_y1 = y1;
-	             old_x2 = x2; old_y2 = y2;
-	             roll_old = roll;
-	         }
+	          case STATE_CALIB:
+	              if(btn_up) calibration_offset++;
+	              if(btn_down) calibration_offset--;
+	              if(btn_enter) currentState = STATE_MENU;
+	              UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
+	              break;
+	      }
 
-	         HAL_Delay(50);
+	      HAL_Delay(100);
 
     /* USER CODE END WHILE */
 
@@ -344,8 +474,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
-                          |GPIO_PIN_9, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3|GPIO_PIN_9, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_7, GPIO_PIN_RESET);
@@ -353,10 +482,14 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PA0 PA1 PA2 PA3
-                           PA9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
-                          |GPIO_PIN_9;
+  /*Configure GPIO pins : PA0 PA1 PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PA3 PA9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_9;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
