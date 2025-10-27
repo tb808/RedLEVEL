@@ -77,7 +77,7 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-//test change 5
+//test change 2
 
 void MPU6500_Init(void)
 {
