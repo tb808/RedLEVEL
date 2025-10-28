@@ -103,6 +103,8 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+//Change menu
+
 int limit_value = 30;
 int calibration_offset = 0;
 
