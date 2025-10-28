@@ -57,7 +57,7 @@ typedef struct {
 
 SystemState currentState = STATE_MENU;
 int menu_index = 0;
-const char* menu_items[3] = {"Anzeige", "Grenzwert", "Kalibrierung"}; // 3 Menüpunkte
+const char* menu_items[3] = {"Anzeige", "Grenzwert", "Kalibrierung"};
 
 /* USER CODE END PTD */
 
@@ -103,7 +103,8 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-// test
+int limit_value = 30;
+int calibration_offset = 0;
 
 // --- Button lesen mit Entprellung ---
 uint8_t readButton(GPIO_TypeDef* port, uint16_t pin)
@@ -131,16 +132,30 @@ uint8_t readButton(GPIO_TypeDef* port, uint16_t pin)
     return 0;
 }
 
-// --- Flankenerkennung Taster ---
-uint8_t button_pressed(Button_t* btn)
+// --- Button-Abfrage mit Entprellung ---
+uint8_t buttonPressed(GPIO_TypeDef* port, uint16_t pin)
 {
-    uint8_t state = (HAL_GPIO_ReadPin(btn->port, btn->pin) == GPIO_PIN_RESET); // gedrückt = LOW
-    uint8_t result = 0;
+    static uint32_t last_press[16] = {0};
+    static uint8_t initialized = 0;
+    if(!initialized)
+    {
+        for(int i=0;i<16;i++) last_press[i]=HAL_GetTick();
+        initialized=1;
+    }
 
-    if(state && !btn->pressed_last)
-        result = 1; // steigende Flanke erkannt
-    btn->pressed_last = state;
-    return result;
+    uint8_t pin_index=0;
+    uint16_t temp=pin;
+    while(temp>1){ temp>>=1; pin_index++; }
+
+    if(HAL_GPIO_ReadPin(port,pin)==GPIO_PIN_RESET)
+    {
+        if(HAL_GetTick()-last_press[pin_index]>200)
+        {
+            last_press[pin_index]=HAL_GetTick();
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* MPU Funktionen */
@@ -169,50 +184,53 @@ float CalculateRoll(int16_t ax, int16_t ay, int16_t az)
     return atan2f(ay_f, sqrtf(ax_f*ax_f + az_f*az_f)) * 180.0f / M_PI;
 }
 
-// --- Menü anzeigen ---
-void displayMenu(int selectedIndex)
+// --- Menüanzeige ---
+void displayMenu(int selected)
 {
     fillRect(0,20,128,100,BLACK);
-    for(int i=0;i<2;i++)
+    for(int i=0;i<3;i++)
     {
-        if(i==selectedIndex)
+        if(i==selected)
             ST7735_WriteString(10,30+i*20,menu_items[i],Font_7x10,WHITE,YELLOW);
         else
             ST7735_WriteString(10,30+i*20,menu_items[i],Font_7x10,YELLOW,BLACK);
     }
 }
 
-void UpdateDisplay(SystemState state, int menu_index, int limit_value, int calibration_offset)
+// --- Gesamtdisplay aktualisieren ---
+void UpdateDisplay(SystemState state)
 {
-    char text[32];
+    char buf[32];
+    fillRect(0,20,128,100,BLACK);
+
     switch(state)
     {
         case STATE_MENU:
+            ST7735_WriteString(0,5,"Hauptmenue:",Font_7x10,YELLOW,BLACK);
             displayMenu(menu_index);
             break;
 
         case STATE_DISPLAY:
-            fillRect(0,20,128,100,BLACK);
-            ST7735_WriteString(0,20,"Anzeige-Modus",Font_7x10,YELLOW,BLACK);
+            ST7735_WriteString(0,5,"Anzeige-Modus",Font_7x10,YELLOW,BLACK);
             break;
 
         case STATE_LIMIT:
-            fillRect(0,20,128,100,BLACK);
-            ST7735_WriteString(0,20,"Grenzwert-Modus",Font_7x10,YELLOW,BLACK);
-            snprintf(text,sizeof(text),"Grenzwert: %d Grad",limit_value);
-            ST7735_WriteString(0,40,text,Font_7x10,WHITE,BLACK);
+            ST7735_WriteString(0,5,"Grenzwert-Modus",Font_7x10,YELLOW,BLACK);
+            snprintf(buf,sizeof(buf),"Grenzwert: %d Grad",limit_value);
+            ST7735_WriteString(0,30,buf,Font_7x10,WHITE,BLACK);
+            ST7735_WriteString(0,50,"Up/Down = Wert",Font_7x10,WHITE,BLACK);
+            ST7735_WriteString(0,65,"Enter = Zurueck",Font_7x10,WHITE,BLACK);
             break;
 
         case STATE_CALIB:
-            fillRect(0,20,128,100,BLACK);
-            ST7735_WriteString(0,20,"Kalibrierungs-Modus",Font_7x10,YELLOW,BLACK);
-            snprintf(text,sizeof(text),"Offset: %d Grad",calibration_offset);
-            ST7735_WriteString(0,40,text,Font_7x10,WHITE,BLACK);
+            ST7735_WriteString(0,5,"Kalibrierungs-Modus",Font_7x10,YELLOW,BLACK);
+            snprintf(buf,sizeof(buf),"Offset: %d Grad",calibration_offset);
+            ST7735_WriteString(0,30,buf,Font_7x10,WHITE,BLACK);
+            ST7735_WriteString(0,50,"Up/Down = Offset",Font_7x10,WHITE,BLACK);
+            ST7735_WriteString(0,65,"Enter = Zurueck",Font_7x10,WHITE,BLACK);
             break;
     }
 }
-
-
 
 
 
@@ -259,13 +277,10 @@ int main(void)
      GPIO_InitStruct.Pull = GPIO_PULLUP;
      HAL_GPIO_Init(BTN_GPIO, &GPIO_InitStruct);
 
-  ST7735_Init(0);
-      fillScreen(BLACK);
-
-      int limit_value = 30;           // Beispiel-Grenzwert
-      int calibration_offset = 0;      // Kalibrierungs-Offset
-
-      MPU6500_Init();
+     ST7735_Init(0);
+       fillScreen(BLACK);
+       MPU6500_Init();
+       UpdateDisplay(currentState);
 
   /* USER CODE END 2 */
 
@@ -274,70 +289,79 @@ int main(void)
   while (1)
   {
 
-	  // --- Button abfragen ---
-	      uint8_t btn_up = readButton(BTN_GPIO, BTN_UP_PIN);
-	      uint8_t btn_down = readButton(BTN_GPIO, BTN_DOWN_PIN);
-	      uint8_t btn_enter = readButton(BTN_GPIO, BTN_ENTER_PIN);
+	  uint8_t up = buttonPressed(BTN_GPIO, BTN_UP_PIN);
+	        uint8_t down = buttonPressed(BTN_GPIO, BTN_DOWN_PIN);
+	        uint8_t enter = buttonPressed(BTN_GPIO, BTN_ENTER_PIN);
 
-	      switch(currentState)
-	      {
-	          case STATE_MENU:
-	              if(btn_up)
-	              {
-	                  if(menu_index > 0) menu_index--;
-	                  else menu_index = 2; // Wrap-around
-	                  UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
-	              }
-	              if(btn_down)
-	              {
-	                  if(menu_index < 2) menu_index++;
-	                  else menu_index = 0; // Wrap-around
-	                  UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
-	              }
-	              if(btn_enter)
-	              {
-	                  switch(menu_index)
-	                  {
-	                      case 0: currentState = STATE_DISPLAY; break;
-	                      case 1: currentState = STATE_LIMIT; break;
-	                      case 2: currentState = STATE_CALIB; break;
-	                  }
-	                  UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
-	              }
-	              break;
+	        switch(currentState)
+	        {
+	            case STATE_MENU:
+	                if(up)
+	                {
+	                    menu_index = (menu_index == 0) ? 2 : menu_index - 1;
+	                    UpdateDisplay(STATE_MENU);
+	                }
+	                if(down)
+	                {
+	                    menu_index = (menu_index == 2) ? 0 : menu_index + 1;
+	                    UpdateDisplay(STATE_MENU);
+	                }
+	                if(enter)
+	                {
+	                    if(menu_index == 0) currentState = STATE_DISPLAY;
+	                    if(menu_index == 1) currentState = STATE_LIMIT;
+	                    if(menu_index == 2) currentState = STATE_CALIB;
+	                    UpdateDisplay(currentState);
+	                }
+	                break;
 
-	          case STATE_DISPLAY:
-	          {
-	              int16_t ax, ay, az;
-	              MPU6500_Read_Accel(&ax, &ay, &az);
-	              float roll = CalculateRoll(ax, ay, az) + calibration_offset;
+	            case STATE_DISPLAY:
+	            {
+	                int16_t ax, ay, az;
+	                MPU6500_Read_Accel(&ax, &ay, &az);
+	                int16_t roll = CalculateRoll(ax, ay, az) + calibration_offset;
 
-	              char buf[32];
-	              snprintf(buf, sizeof(buf), "Roll: %.2f", roll);
-	              fillRect(0,40,128,20,BLACK);
-	              ST7735_WriteString(0,40,buf,Font_7x10,WHITE,BLACK);
+	                char buf[32];
+	                snprintf(buf,sizeof(buf),"Roll: %d Grad", roll);
+	                fillRect(0,30,128,20,BLACK);
+	                ST7735_WriteString(0,30,buf,Font_7x10,WHITE,BLACK);
 
-	              if(btn_enter) currentState = STATE_MENU; // zurück ins Menü
-	              UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
-	          }
-	          break;
+	                snprintf(buf,sizeof(buf),"Grenze: %d",limit_value);
+	                ST7735_WriteString(0,50,buf,Font_7x10,YELLOW,BLACK);
 
-	          case STATE_LIMIT:
-	              if(btn_up) limit_value++;
-	              if(btn_down) limit_value--;
-	              if(btn_enter) currentState = STATE_MENU;
-	              UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
-	              break;
+	                if(roll > limit_value)
+	                    ST7735_WriteString(0,70,"!!! UEBER GRENZE !!!",Font_7x10,RED,BLACK);
 
-	          case STATE_CALIB:
-	              if(btn_up) calibration_offset++;
-	              if(btn_down) calibration_offset--;
-	              if(btn_enter) currentState = STATE_MENU;
-	              UpdateDisplay(currentState, menu_index, limit_value, calibration_offset);
-	              break;
-	      }
+	                if(enter)
+	                {
+	                    currentState = STATE_MENU;
+	                    UpdateDisplay(currentState);
+	                }
+	                break;
+	            }
 
-	      HAL_Delay(100);
+	            case STATE_LIMIT:
+	                if(up) { limit_value++; UpdateDisplay(STATE_LIMIT); }
+	                if(down) { limit_value--; UpdateDisplay(STATE_LIMIT); }
+	                if(enter)
+	                {
+	                    currentState = STATE_MENU;
+	                    UpdateDisplay(currentState);
+	                }
+	                break;
+
+	            case STATE_CALIB:
+	                if(up) { calibration_offset++; UpdateDisplay(STATE_CALIB); }
+	                if(down) { calibration_offset--; UpdateDisplay(STATE_CALIB); }
+	                if(enter)
+	                {
+	                    currentState = STATE_MENU;
+	                    UpdateDisplay(currentState);
+	                }
+	                break;
+	        }
+
+	        HAL_Delay(100);
 
     /* USER CODE END WHILE */
 
