@@ -90,6 +90,7 @@ extern SPI_HandleTypeDef hspi1;
 #define YELLOW  0xFFE0
 #define WHITE   0xFFFF
 #define GRAY 0x8410  // Mittelgrau (RGB565)
+#define DARK_GRAY 0x8410  // RGB565 Wert für ein dunkles Grau
 #define BROWN  0x79E0
 #define color565(r, g, b) (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3))
 

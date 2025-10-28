@@ -197,41 +197,45 @@ void displayMenu(int selected)
     }
 }
 
-// --- Gesamtdisplay aktualisieren ---
 void UpdateDisplay(SystemState state)
 {
     char buf[32];
-    fillRect(0,20,128,100,BLACK);
+    fillScreen(BLACK);
 
+    // --- Titelzeile ---
+    ST7735_WriteString(25, 0, "RedLEVEL", Font_7x10, RED, BLACK);
+
+    // --- Modusanzeige ---
+    ST7735_WriteString(0, 15, "----------------------", Font_7x10, DARK_GRAY, BLACK);
     switch(state)
     {
         case STATE_MENU:
-            ST7735_WriteString(0,5,"Hauptmenue:",Font_7x10,YELLOW,BLACK);
-            displayMenu(menu_index);
+            ST7735_WriteString(0, 25, "Modus: Hauptmenue", Font_7x10, YELLOW, BLACK);
+            displayMenu(menu_index); // Menü startet automatisch tiefer (ab y=45)
             break;
 
         case STATE_DISPLAY:
-            ST7735_WriteString(0,5,"Anzeige-Modus",Font_7x10,YELLOW,BLACK);
+            ST7735_WriteString(0, 25, "Modus: Anzeige", Font_7x10, YELLOW, BLACK);
+            ST7735_WriteString(0, 45, "Neigungsmessung aktiv", Font_7x10, WHITE, BLACK);
             break;
 
         case STATE_LIMIT:
-            ST7735_WriteString(0,5,"Grenzwert-Modus",Font_7x10,YELLOW,BLACK);
-            snprintf(buf,sizeof(buf),"Grenzwert: %d Grad",limit_value);
-            ST7735_WriteString(0,30,buf,Font_7x10,WHITE,BLACK);
-            ST7735_WriteString(0,50,"Up/Down = Wert",Font_7x10,WHITE,BLACK);
-            ST7735_WriteString(0,65,"Enter = Zurueck",Font_7x10,WHITE,BLACK);
+            ST7735_WriteString(0, 25, "Modus: Grenzwert", Font_7x10, YELLOW, BLACK);
+            snprintf(buf, sizeof(buf), "Grenzwert: %d Grad", limit_value);
+            ST7735_WriteString(0, 45, buf, Font_7x10, WHITE, BLACK);
+            ST7735_WriteString(0, 65, "Up/Down = Wert", Font_7x10, WHITE, BLACK);
+            ST7735_WriteString(0, 80, "Enter = Zurueck", Font_7x10, WHITE, BLACK);
             break;
 
         case STATE_CALIB:
-            ST7735_WriteString(0,5,"Kalibrierungs-Modus",Font_7x10,YELLOW,BLACK);
-            snprintf(buf,sizeof(buf),"Offset: %d Grad",calibration_offset);
-            ST7735_WriteString(0,30,buf,Font_7x10,WHITE,BLACK);
-            ST7735_WriteString(0,50,"Up/Down = Offset",Font_7x10,WHITE,BLACK);
-            ST7735_WriteString(0,65,"Enter = Zurueck",Font_7x10,WHITE,BLACK);
+            ST7735_WriteString(0, 25, "Modus: Kalibrierung", Font_7x10, YELLOW, BLACK);
+            snprintf(buf, sizeof(buf), "Offset: %d Grad", calibration_offset);
+            ST7735_WriteString(0, 45, buf, Font_7x10, WHITE, BLACK);
+            ST7735_WriteString(0, 65, "Up/Down = Offset", Font_7x10, WHITE, BLACK);
+            ST7735_WriteString(0, 80, "Enter = Zurueck", Font_7x10, WHITE, BLACK);
             break;
     }
 }
-
 
 
 /* USER CODE END 0 */
