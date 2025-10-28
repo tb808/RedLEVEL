@@ -319,20 +319,41 @@ int main(void)
 	            {
 	                int16_t ax, ay, az;
 	                MPU6500_Read_Accel(&ax, &ay, &az);
-	                int16_t roll = CalculateRoll(ax, ay, az) + calibration_offset;
+
+	                // --- Roll-Winkel in ganzen Grad ---
+	                int roll_int = (int)(atan2((int32_t)ay, sqrt((int32_t)ax*ax + (int32_t)az*az)) * 180 / M_PI);
+	                roll_int += calibration_offset;
 
 	                char buf[32];
-	                snprintf(buf,sizeof(buf),"Roll: %d Grad", roll);
-	                fillRect(0,30,128,20,BLACK);
-	                ST7735_WriteString(0,30,buf,Font_7x10,WHITE,BLACK);
+	                snprintf(buf, sizeof(buf), "Roll: %d Grad", roll_int);
+	                fillRect(0, 30, 128, 20, BLACK);
+	                ST7735_WriteString(0, 30, buf, Font_7x10, WHITE, BLACK);
 
-	                snprintf(buf,sizeof(buf),"Grenze: %d",limit_value);
-	                ST7735_WriteString(0,50,buf,Font_7x10,YELLOW,BLACK);
+	                snprintf(buf, sizeof(buf), "Grenze: %d", limit_value);
+	                ST7735_WriteString(0, 50, buf, Font_7x10, YELLOW, BLACK);
 
-	                if(roll > limit_value)
-	                    ST7735_WriteString(0,70,"!!! UEBER GRENZE !!!",Font_7x10,RED,BLACK);
+	                // --- Zustand speichern, um Flackern zu vermeiden ---
+	                static uint8_t over_limit = 0;
 
-	                if(enter)
+	                if (roll_int > limit_value)
+	                {
+	                    if (!over_limit)  // nur neu zeichnen, wenn Zustand sich ändert
+	                    {
+	                        fillRect(0, 70, 128, 20, BLACK);
+	                        ST7735_WriteString(0, 70, "!!! UEBER GRENZE !!!", Font_7x10, RED, BLACK);
+	                        over_limit = 1;
+	                    }
+	                }
+	                else
+	                {
+	                    if (over_limit)  // Zustand zurückwechseln -> löschen
+	                    {
+	                        fillRect(0, 70, 128, 20, BLACK);
+	                        over_limit = 0;
+	                    }
+	                }
+
+	                if (enter)
 	                {
 	                    currentState = STATE_MENU;
 	                    UpdateDisplay(currentState);
