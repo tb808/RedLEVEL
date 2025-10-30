@@ -115,6 +115,9 @@ static void MX_I2C1_Init(void);
 int limit_value = 30;
 int calibration_offset = 0;
 
+int last_roll_reset_flag = 0; // globale Definition
+
+
 // --- Button lesen mit Entprellung ---
 uint8_t readButton(GPIO_TypeDef* port, uint16_t pin)
 {
@@ -209,28 +212,26 @@ void displayMenu(int selected)
 void UpdateDisplay(SystemState state)
 {
     char buf[32];
+
+    // kompletter Screen wird nur hier gelöscht (also beim State-Wechsel)
     fillScreen(BLACK);
 
-    // --- Titelzeile ---
-    ST7735_WriteString(25, 0, "RedLEVEL", Font_7x10, RED, BLACK);
-
-    // --- Modusanzeige ---
+    // Titel
+    ST7735_WriteString(25, Y_TITLE, "RedLEVEL", Font_7x10, RED, BLACK);
     ST7735_WriteString(0, 15, "----------------------", Font_7x10, DARK_GRAY, BLACK);
+
     switch(state)
     {
         case STATE_MENU:
             ST7735_WriteString(0, 25, "Modus: Hauptmenue", Font_7x10, YELLOW, BLACK);
-            displayMenu(menu_index); // Menü startet automatisch tiefer (ab y=45)
+            displayMenu(menu_index);
             break;
 
         case STATE_DISPLAY:
-                    ST7735_WriteString(0, Y_MODE, "Modus: Anzeige", Font_7x10, YELLOW, BLACK);
-
-                    // feste Labels einmalig
-                    ST7735_WriteString(0, Y_INFO, "Enter = Zurueck", Font_7x10, DARK_GRAY, BLACK);
-
-                    // die dynamischen Zeilen (Roll, Grenze, Warnung) werden in der while(1) geloescht+neu geschrieben
-                    break;
+            ST7735_WriteString(0, Y_MODE, "Modus: Anzeige", Font_7x10, YELLOW, BLACK);
+            ST7735_WriteString(0, Y_INFO, "Enter = Zurueck", Font_7x10, DARK_GRAY, BLACK);
+            // Roll / Grenze / Warnung macht die while(1)-Schleife
+            break;
 
         case STATE_LIMIT:
             ST7735_WriteString(0, 25, "Modus: Grenzwert", Font_7x10, YELLOW, BLACK);
@@ -325,45 +326,84 @@ int main(void)
 	                }
 	                if(enter)
 	                {
-	                    if(menu_index == 0) currentState = STATE_DISPLAY;
+	                    if(menu_index == 0)
+	                    {
+	                        currentState = STATE_DISPLAY;
+
+	                        // Werte für Anzeige-Modus zurücksetzen
+	                        extern int last_roll_reset_flag; // (Deklaration folgt unten)
+	                        last_roll_reset_flag = 1;
+	                    }
 	                    if(menu_index == 1) currentState = STATE_LIMIT;
 	                    if(menu_index == 2) currentState = STATE_CALIB;
+
 	                    UpdateDisplay(currentState);
 	                }
 	                break;
 
 	            case STATE_DISPLAY:
-	            {
-	               int16_t ax, ay, az;
-	               MPU6500_Read_Accel(&ax, &ay, &az);
-	               int roll_int = (int)(atan2((int32_t)ay, sqrt((int32_t)ax*ax + (int32_t)az*az)) * 180 / M_PI);
-	               roll_int += calibration_offset;
-	               char buf[32];
-	               fillRect(0, Y_ROLL, 128, 12, BLACK);
-	               snprintf(buf, sizeof(buf), "Roll: %d Grad", roll_int);
-	               ST7735_WriteString(0, Y_ROLL, buf, Font_7x10, WHITE, BLACK);
-	               fillRect(0, Y_LIMIT, 128, 12, BLACK);
-	               snprintf(buf, sizeof(buf), "Grenze: %d", limit_value);
-	               ST7735_WriteString(0, Y_LIMIT, buf, Font_7x10, YELLOW, BLACK);
-	               static uint8_t over_limit = 0;
-	               if (roll_int > limit_value)
-	               {
-	                   if (!over_limit) {
-	                       fillRect(0, Y_WARN, 128, 14, BLACK);
-	                       ST7735_WriteString(0, Y_WARN, "!!! UEBER GRENZE !!!", Font_7x10, RED, BLACK);
-	                       over_limit = 1;
-	                   }
-	               }
-	               else if (over_limit) {
-	                   fillRect(0, Y_WARN, 128, 14, BLACK);
-	                   over_limit = 0;
-	               }
-	               if (enter) {
-	                   currentState = STATE_MENU;
-	                   UpdateDisplay(currentState);
-	               }
-	               break;
-	            }
+	                        {
+	                            // alte Werte merken, damit wir nicht dauernd neu zeichnen
+	                            static int last_roll = 9999;
+	                            static int last_limit = 9999;
+	                            static uint8_t over_limit = 0;
+
+	                            int16_t ax, ay, az;
+	                            MPU6500_Read_Accel(&ax, &ay, &az);
+
+	                            int roll_int = (int)(atan2((int32_t)ay,
+	                                               sqrt((int32_t)ax*ax + (int32_t)az*az)) * 180 / M_PI);
+	                            roll_int += calibration_offset;
+
+	                            char buf[32];
+
+	                            // --- Roll nur neu zeichnen, wenn sich der Wert geändert hat ---
+	                            if (roll_int != last_roll)
+	                            {
+	                                // nur die Zeile löschen, nicht den ganzen Screen
+	                                fillRect(0, Y_ROLL, 110, 12, BLACK);
+	                                snprintf(buf, sizeof(buf), "Roll: %d Grad", roll_int);
+	                                ST7735_WriteString(0, Y_ROLL, buf, Font_7x10, WHITE, BLACK);
+	                                last_roll = roll_int;
+	                            }
+
+	                            // --- Grenzwert nur neu zeichnen, wenn er sich geändert hat ---
+	                            if (limit_value != last_limit)
+	                            {
+	                                fillRect(0, Y_LIMIT, 110, 12, BLACK);
+	                                snprintf(buf, sizeof(buf), "Grenze: %d", limit_value);
+	                                ST7735_WriteString(0, Y_LIMIT, buf, Font_7x10, YELLOW, BLACK);
+	                                last_limit = limit_value;
+	                            }
+
+	                            // --- Warnung nur bei Zustandswechsel ---
+	                            if (roll_int > limit_value)
+	                            {
+	                                if (!over_limit)
+	                                {
+	                                    fillRect(0, Y_WARN, 128, 14, BLACK);
+	                                    ST7735_WriteString(0, Y_WARN, "!!! UEBER GRENZE !!!", Font_7x10, RED, BLACK);
+	                                    over_limit = 1;
+	                                }
+	                            }
+	                            else
+	                            {
+	                                if (over_limit)
+	                                {
+	                                    fillRect(0, Y_WARN, 128, 14, BLACK);
+	                                    over_limit = 0;
+	                                }
+	                            }
+
+	                            // zurück ins Menü
+	                            if (enter)
+	                            {
+	                                currentState = STATE_MENU;
+	                                UpdateDisplay(currentState);
+	                            }
+
+	                            break;
+	                        }
 
 	            case STATE_LIMIT:
 	                if(up) { limit_value++; UpdateDisplay(STATE_LIMIT); }
