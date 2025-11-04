@@ -75,7 +75,6 @@ const char* menu_items[3] = {"Anzeige", "Grenzwert", "Kalibrierung"};
 #define BTN_ENTER_PIN GPIO_PIN_4
 #define BTN_GPIO      GPIOA
 
-//test 23
 
 #define Y_TITLE    0
 #define Y_MODE     25
@@ -83,6 +82,10 @@ const char* menu_items[3] = {"Anzeige", "Grenzwert", "Kalibrierung"};
 #define Y_LIMIT    60
 #define Y_INFO     75
 #define Y_WARN     90
+
+#define Y_LINE 130       // vertikale Basislinie
+#define LINE_WIDTH 20    // halbe Breite der Linie
+#define LINE_THICKNESS 4   // Dicke der Linie
 
 /* USER CODE END PD */
 
@@ -118,6 +121,8 @@ int limit_value = 30;
 int calibration_offset = 0;
 
 int last_roll_reset_flag = 0; // globale Definition
+
+static int last_x0 = 0, last_y0 = 0, last_x1 = 0, last_y1 = 0;
 
 
 // --- Button lesen mit Entprellung ---
@@ -380,7 +385,7 @@ int main(void)
 	                                if (!over_limit)
 	                                {
 	                                    fillRect(0, Y_WARN, 128, 14, BLACK);
-	                                    ST7735_WriteString(0, Y_WARN, "!!! UEBER GRENZE !!!", Font_7x10, RED, BLACK);
+	                                    ST7735_WriteString(0, Y_WARN, "! UEBER GRENZE !", Font_7x10, RED, BLACK);
 	                                    over_limit = 1;
 	                                }
 	                            }
@@ -398,6 +403,35 @@ int main(void)
 	                            {
 	                                currentState = STATE_MENU;
 	                                UpdateDisplay(currentState);
+	                            }
+
+	                            // Rollwert als Winkel in Grad
+	                            float angle = roll_int;  // roll_int aus deinem Code
+
+	                            // Linie berechnen (Mitte unten, Linie +/- LINE_WIDTH je nach Winkel)
+	                            float rad = angle * M_PI / 180.0f;
+	                            int x0 = 64 - (int)(LINE_WIDTH * cos(rad));
+	                            int y0 = Y_LINE - (int)(LINE_WIDTH * sin(rad));
+	                            int x1 = 64 + (int)(LINE_WIDTH * cos(rad));
+	                            int y1 = Y_LINE + (int)(LINE_WIDTH * sin(rad));
+
+	                            // Nur neu zeichnen, wenn sich die Linie tatsächlich verändert hat
+	                            if(x0 != last_x0 || y0 != last_y0 || x1 != last_x1 || y1 != last_y1)
+	                            {
+	                                // alte Linie löschen
+	                                if(last_x0 || last_x1)
+	                                    for(int i=0; i<LINE_THICKNESS; i++)
+	                                        drawLine(last_x0, last_y0+i, last_x1, last_y1+i, BLACK);
+
+	                                // neue Linie zeichnen
+	                                for(int i=0; i<LINE_THICKNESS; i++)
+	                                    drawLine(x0, y0+i, x1, y1+i, WHITE);
+
+	                                // Werte merken
+	                                last_x0 = x0;
+	                                last_y0 = y0;
+	                                last_x1 = x1;
+	                                last_y1 = y1;
 	                            }
 
 	                            break;
