@@ -404,14 +404,30 @@ int main(void)
 	                        }
 
 	            case STATE_LIMIT:
-	                if(up) { limit_value++; UpdateDisplay(STATE_LIMIT); }
-	                if(down) { limit_value--; UpdateDisplay(STATE_LIMIT); }
-	                if(enter)
+	            {
+	                static int last_limit_value = -9999;  // merken, um unnötige Updates zu vermeiden
+
+	                if (up)  limit_value++;
+	                if (down) limit_value--;
+
+	                // Nur aktualisieren, wenn sich der Wert geändert hat
+	                if (limit_value != last_limit_value)
+	                {
+	                    char buf[32];
+	                    // Nur den Bereich löschen, wo der Wert steht
+	                    fillRect(0, 45, 120, 12, BLACK);
+	                    snprintf(buf, sizeof(buf), "Grenzwert: %d Grad", limit_value);
+	                    ST7735_WriteString(0, 45, buf, Font_7x10, WHITE, BLACK);
+	                    last_limit_value = limit_value;
+	                }
+
+	                if (enter)
 	                {
 	                    currentState = STATE_MENU;
 	                    UpdateDisplay(currentState);
 	                }
 	                break;
+	            }
 
 	            case STATE_CALIB:
 	                if(up) { calibration_offset++; UpdateDisplay(STATE_CALIB); }
