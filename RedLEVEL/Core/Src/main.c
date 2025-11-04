@@ -430,14 +430,33 @@ int main(void)
 	            }
 
 	            case STATE_CALIB:
-	                if(up) { calibration_offset++; UpdateDisplay(STATE_CALIB); }
-	                if(down) { calibration_offset--; UpdateDisplay(STATE_CALIB); }
-	                if(enter)
+	            {
+	                static int last_calibration_offset = -9999; // merken, um unnötige Updates zu vermeiden
+
+	                if (up)  calibration_offset++;
+	                if (down) calibration_offset--;
+
+	                // Nur aktualisieren, wenn sich der Wert geändert hat
+	                if (calibration_offset != last_calibration_offset)
+	                {
+	                    char buf[32];
+	                    // Nur den Bereich löschen, wo der Wert steht
+	                    fillRect(0, 45, 120, 12, BLACK);
+	                    snprintf(buf, sizeof(buf), "Offset: %d Grad", calibration_offset);
+	                    ST7735_WriteString(0, 45, buf, Font_7x10, WHITE, BLACK);
+	                    last_calibration_offset = calibration_offset;
+	                }
+
+	                if (enter)
 	                {
 	                    currentState = STATE_MENU;
 	                    UpdateDisplay(currentState);
 	                }
+
 	                break;
+	            }
+
+
 	        }
 
 	        HAL_Delay(100);
