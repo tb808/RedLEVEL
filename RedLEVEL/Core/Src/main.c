@@ -73,6 +73,7 @@ const char* menu_items[3] = {"Anzeige", "Grenzwert", "Kalibrierung"};
 #define BTN_UP_PIN    GPIO_PIN_0
 #define BTN_DOWN_PIN  GPIO_PIN_1
 #define BTN_ENTER_PIN GPIO_PIN_4
+#define LED_WARN GPIO_PIN_3
 #define BTN_GPIO      GPIOA
 
 
@@ -386,6 +387,9 @@ int main(void)
 	                                {
 	                                    fillRect(0, Y_WARN, 128, 14, BLACK);
 	                                    ST7735_WriteString(0, Y_WARN, "! UEBER GRENZE !", Font_7x10, RED, BLACK);
+
+	                                    HAL_GPIO_WritePin(BTN_GPIO, LED_WARN, GPIO_PIN_SET);
+
 	                                    over_limit = 1;
 	                                }
 	                            }
@@ -394,6 +398,7 @@ int main(void)
 	                                if (over_limit)
 	                                {
 	                                    fillRect(0, Y_WARN, 128, 14, BLACK);
+	                                    HAL_GPIO_WritePin(BTN_GPIO, LED_WARN, GPIO_PIN_RESET);
 	                                    over_limit = 0;
 	                                }
 	                            }
