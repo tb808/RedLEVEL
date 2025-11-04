@@ -75,12 +75,14 @@ const char* menu_items[3] = {"Anzeige", "Grenzwert", "Kalibrierung"};
 #define BTN_ENTER_PIN GPIO_PIN_4
 #define BTN_GPIO      GPIOA
 
+//test 23
+
 #define Y_TITLE    0
-#define Y_MODE     15
-#define Y_ROLL     30
-#define Y_LIMIT    45
-#define Y_INFO     60
-#define Y_WARN     80
+#define Y_MODE     25
+#define Y_ROLL     45
+#define Y_LIMIT    60
+#define Y_INFO     75
+#define Y_WARN     90
 
 /* USER CODE END PD */
 
@@ -229,6 +231,11 @@ void UpdateDisplay(SystemState state)
 
         case STATE_DISPLAY:
             ST7735_WriteString(0, Y_MODE, "Modus: Anzeige", Font_7x10, YELLOW, BLACK);
+
+            fillRect(0, Y_LIMIT, 110, 12, BLACK);
+            snprintf(buf, sizeof(buf), "Grenze: %d", limit_value);
+            ST7735_WriteString(0, Y_LIMIT, buf, Font_7x10, YELLOW, BLACK);
+
             ST7735_WriteString(0, Y_INFO, "Enter = Zurueck", Font_7x10, DARK_GRAY, BLACK);
             // Roll / Grenze / Warnung macht die while(1)-Schleife
             break;
@@ -345,7 +352,6 @@ int main(void)
 	                        {
 	                            // alte Werte merken, damit wir nicht dauernd neu zeichnen
 	                            static int last_roll = 9999;
-	                            static int last_limit = 9999;
 	                            static uint8_t over_limit = 0;
 
 	                            int16_t ax, ay, az;
@@ -367,14 +373,6 @@ int main(void)
 	                                last_roll = roll_int;
 	                            }
 
-	                            // --- Grenzwert nur neu zeichnen, wenn er sich geändert hat ---
-	                            if (limit_value != last_limit)
-	                            {
-	                                fillRect(0, Y_LIMIT, 110, 12, BLACK);
-	                                snprintf(buf, sizeof(buf), "Grenze: %d", limit_value);
-	                                ST7735_WriteString(0, Y_LIMIT, buf, Font_7x10, YELLOW, BLACK);
-	                                last_limit = limit_value;
-	                            }
 
 	                            // --- Warnung nur bei Zustandswechsel ---
 	                            if (roll_int > limit_value)
