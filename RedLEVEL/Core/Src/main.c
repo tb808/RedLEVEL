@@ -88,6 +88,7 @@ const char* menu_items[3] = {"Anzeige", "Grenzwert", "Kalibrierung"};
 #define LINE_WIDTH 20    // halbe Breite der Linie
 #define LINE_THICKNESS 4   // Dicke der Linie
 
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -264,6 +265,16 @@ void UpdateDisplay(SystemState state)
     }
 }
 
+void drawMenuItem(int index, uint8_t selected)
+{
+    uint16_t y = 30 + index * 20;
+
+    if (selected)
+        ST7735_WriteString(10, y, menu_items[index], Font_7x10, WHITE, YELLOW);
+    else
+        ST7735_WriteString(10, y, menu_items[index], Font_7x10, YELLOW, BLACK);
+}
+
 
 /* USER CODE END 0 */
 
@@ -313,6 +324,7 @@ int main(void)
        MPU6500_Init();
        UpdateDisplay(currentState);
 
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -327,16 +339,26 @@ int main(void)
 	        switch(currentState)
 	        {
 	            case STATE_MENU:
-	                if(up)
-	                {
-	                    menu_index = (menu_index == 0) ? 2 : menu_index - 1;
-	                    UpdateDisplay(STATE_MENU);
-	                }
-	                if(down)
-	                {
-	                    menu_index = (menu_index == 2) ? 0 : menu_index + 1;
-	                    UpdateDisplay(STATE_MENU);
-	                }
+
+	            	static int last_menu_index = 0;
+
+	            	    if (up)
+	            	    {
+	            	        last_menu_index = menu_index;
+	            	        menu_index = (menu_index == 0) ? 2 : menu_index - 1;
+
+	            	        drawMenuItem(last_menu_index, 0);  // alt normal
+	            	        drawMenuItem(menu_index, 1);       // neu markiert
+	            	    }
+
+	            	    if (down)
+	            	    {
+	            	        last_menu_index = menu_index;
+	            	        menu_index = (menu_index == 2) ? 0 : menu_index + 1;
+
+	            	        drawMenuItem(last_menu_index, 0);
+	            	        drawMenuItem(menu_index, 1);
+	            	    }
 	                if(enter)
 	                {
 	                    if(menu_index == 0)
