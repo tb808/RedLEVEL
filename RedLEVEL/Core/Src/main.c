@@ -256,7 +256,7 @@ void UpdateDisplay(SystemState state)
             break;
 
         case STATE_CALIB:
-            ST7735_WriteString(0, 25, "Modus: Kalibrierung", Font_7x10, YELLOW, BLACK);
+            ST7735_WriteString(0, 25, "Modus: Kalibrieren", Font_7x10, YELLOW, BLACK);
             snprintf(buf, sizeof(buf), "Offset: %d Grad", calibration_offset);
             ST7735_WriteString(0, 45, buf, Font_7x10, WHITE, BLACK);
             ST7735_WriteString(0, 65, "Up/Down = Offset", Font_7x10, WHITE, BLACK);
